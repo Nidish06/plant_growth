@@ -1,0 +1,115 @@
+import os
+import glob
+import base64
+from datetime import datetime
+from groq import Groq
+import pandas as pd
+import json
+import time
+
+# ========== USER SETTINGS ==========
+FOLDER_PATH = r"C:\AI\ulavan bot\photo_samples"  # Folder containing plant images
+EXCEL_PATH = r"C:\AI\ulavan bot\plant_growth_log.xlsx"  # Output Excel file path
+API_KEY = "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"  # ⚠️ Your Groq API Key
+MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"  # Vision model
+INTERVAL_MINUTES = 0.5 # 🔁 Run analysis every N minutes
+# ===================================
+
+
+# ✅ Get the latest image file
+def get_latest_image(folder):
+    image_files = glob.glob(os.path.join(folder, "*.jpg")) + \
+                  glob.glob(os.path.join(folder, "*.jpeg")) + \
+                  glob.glob(os.path.join(folder, "*.png"))
+    if not image_files:
+        raise FileNotFoundError("No JPG or PNG files found in folder.")
+    latest = max(image_files, key=os.path.getmtime)
+    print(f"📸 Latest image found: {latest}\n")
+    return latest
+
+
+# ✅ Analyze image with Groq Vision Model
+def analyze_image_with_groq(image_path):
+    with open(image_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    client = Groq(api_key=API_KEY)
+
+    prompt = (
+        "Analyze this plant image and respond ONLY in JSON format like this:\n"
+        "{\n"
+        "  \"plant_height_cm\": 5.4,\n"
+        "  \"leaf_color_texture\": \"Bright green, smooth\",\n"
+        "  \"soil_moisture\": \"Moderate\",\n"
+        "  \"number_of_leaves\": 6\n"
+        "}\n"
+        "Do not include any text outside of the JSON."
+    )
+
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+                ],
+            }
+        ],
+    )
+
+    result_text = response.choices[0].message.content
+    print("🌿 AI Plant Analysis Result:\n", result_text, "\n")
+    return result_text
+
+
+# ✅ Append results to Excel
+def log_to_excel(result_text):
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M:%S")
+
+    try:
+        result = json.loads(result_text)
+    except Exception as e:
+        print("⚠️ Could not parse JSON perfectly — please check output format.")
+        print("Error:", e)
+        result = {
+            "plant_height_cm": "",
+            "leaf_color_texture": "",
+            "soil_moisture": "",
+            "number_of_leaves": ""
+        }
+
+    new_entry = {
+        "Date": date_str,
+        "Time": time_str,
+        "Plant Height (cm)": result.get("plant_height_cm", ""),
+        "Leaf Color & Texture": result.get("leaf_color_texture", ""),
+        "Soil Moisture": result.get("soil_moisture", ""),
+        "Number of Leaves": result.get("number_of_leaves", "")
+    }
+
+    if os.path.exists(EXCEL_PATH):
+        df = pd.read_excel(EXCEL_PATH)
+        df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+    else:
+        df = pd.DataFrame([new_entry])
+
+    df.to_excel(EXCEL_PATH, index=False)
+    print(f"📊 Data logged to Excel: {EXCEL_PATH}\n")
+
+
+# ✅ MAIN LOOP
+if __name__ == "__main__":
+    print(f"🚀 Starting Plant Monitoring System — running every {INTERVAL_MINUTES} minute(s).")
+    while True:
+        try:
+            image_path = get_latest_image(FOLDER_PATH)
+            result_text = analyze_image_with_groq(image_path)
+            log_to_excel(result_text)
+        except Exception as e:
+            print(f"❌ Error during analysis: {e}")
+        print(f"⏳ Waiting {INTERVAL_MINUTES} minute(s) before next analysis...\n")
+        time.sleep(INTERVAL_MINUTES * 60)
