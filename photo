@@ -1,0 +1,52 @@
+import cv2
+import os
+import time
+from datetime import datetime, timedelta
+
+# === USER SETTINGS ===
+SAVE_FOLDER = r"C:\AI\ulavan bot\photo_samples"  # 📂 Folder to save images
+INTERVAL_MINUTES = 0.5                     # ⏱ Capture interval (in minutes)
+DELETE_AFTER_MINUTES = 1                # 🗑 Delete images older than this many minutes
+CAMERA_INDEX = 0                         # Usually 0 for default webcam
+
+# === Ensure folder exists ===
+os.makedirs(SAVE_FOLDER, exist_ok=True)
+
+def capture_photo():
+    """Capture a single photo from the webcam and save it."""
+    cam = cv2.VideoCapture(CAMERA_INDEX)
+    ret, frame = cam.read()
+    if ret:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = os.path.join(SAVE_FOLDER, f"plant_{timestamp}.jpg")
+        cv2.imwrite(filename, frame)
+        print(f"[{datetime.now()}] ✅ Saved: {filename}")
+    else:
+        print(f"[{datetime.now()}] ❌ Failed to capture image")
+    cam.release()
+
+def delete_old_photos():
+    """Delete photos older than DELETE_AFTER_MINUTES."""
+    now = datetime.now()
+    cutoff = now - timedelta(minutes=DELETE_AFTER_MINUTES)
+
+    for filename in os.listdir(SAVE_FOLDER):
+        file_path = os.path.join(SAVE_FOLDER, filename)
+        if os.path.isfile(file_path):
+            file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+            if file_time < cutoff:
+                os.remove(file_path)
+                print(f"[{datetime.now()}] 🗑 Deleted old photo: {filename}")
+
+def main():
+    print(f"🌿 Starting plant timelapse capture...")
+    print(f"Photos every {INTERVAL_MINUTES} minute(s), deleting after {DELETE_AFTER_MINUTES} minute(s).\n")
+
+    while True:
+        capture_photo()
+        delete_old_photos()
+        # Sleep for given minutes (converted to seconds)
+        time.sleep(INTERVAL_MINUTES * 60)
+
+if __name__ == "__main__":
+    main()
